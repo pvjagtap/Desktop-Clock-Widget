@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 	"syscall"
 	"time"
@@ -94,13 +95,13 @@ var (
 
 const (
 	// Window styles
-	WS_POPUP       = 0x80000000
-	WS_VISIBLE     = 0x10000000
-	WS_SIZEBOX     = 0x00040000
-	WS_EX_LAYERED  = 0x00080000
+	WS_POPUP         = 0x80000000
+	WS_VISIBLE       = 0x10000000
+	WS_SIZEBOX       = 0x00040000
+	WS_EX_LAYERED    = 0x00080000
 	WS_EX_TOOLWINDOW = 0x00000080
-	WS_EX_APPWINDOW = 0x00040000
-	WS_EX_TOPMOST  = 0x00000008
+	WS_EX_APPWINDOW  = 0x00040000
+	WS_EX_TOPMOST    = 0x00000008
 
 	HWND_TOPMOST   = ^uintptr(0) // -1
 	HWND_NOTOPMOST = ^uintptr(1) // -2
@@ -131,19 +132,19 @@ const (
 	WM_TRAYICON    = WM_APP + 1
 
 	// Timer IDs
-	TIMER_CLOCK    = 1
+	TIMER_CLOCK     = 1
 	TIMER_COUNTDOWN = 2
 
 	// GDI
-	TRANSPARENT     = 1
-	SRCCOPY         = 0x00CC0020
-	PS_SOLID        = 0
-	FW_BOLD         = 700
-	DEFAULT_CHARSET = 1
-	OUT_TT_PRECIS   = 4
-	CLIP_DEFAULT    = 0
+	TRANSPARENT       = 1
+	SRCCOPY           = 0x00CC0020
+	PS_SOLID          = 0
+	FW_BOLD           = 700
+	DEFAULT_CHARSET   = 1
+	OUT_TT_PRECIS     = 4
+	CLIP_DEFAULT      = 0
 	CLEARTYPE_QUALITY = 5
-	FF_DONTCARE     = 0
+	FF_DONTCARE       = 0
 
 	// DrawText
 	DT_CENTER     = 0x0001
@@ -152,19 +153,19 @@ const (
 	DT_NOPREFIX   = 0x0800
 
 	// Menu
-	MF_STRING    = 0x0000
-	MF_SEPARATOR = 0x0800
-	MF_CHECKED   = 0x0008
-	TPM_LEFTALIGN  = 0x0000
-	TPM_TOPALIGN   = 0x0000
-	TPM_RETURNCMD  = 0x0100
+	MF_STRING     = 0x0000
+	MF_SEPARATOR  = 0x0800
+	MF_CHECKED    = 0x0008
+	TPM_LEFTALIGN = 0x0000
+	TPM_TOPALIGN  = 0x0000
+	TPM_RETURNCMD = 0x0100
 
 	// Cursor
-	IDC_ARROW  = 32512
+	IDC_ARROW = 32512
 
 	// Tray
-	NIM_ADD    = 0
-	NIM_DELETE = 2
+	NIM_ADD     = 0
+	NIM_DELETE  = 2
 	NIF_MESSAGE = 1
 	NIF_ICON    = 2
 	NIF_TIP     = 4
@@ -297,15 +298,15 @@ var (
 	timerStr = "05:00"
 	mu       sync.RWMutex
 
-	dragging            bool
-	dragStartScreenX    int32
-	dragStartScreenY    int32
-	dragStartWindowX    int32
-	dragStartWindowY    int32
+	dragging         bool
+	dragStartScreenX int32
+	dragStartScreenY int32
+	dragStartWindowX int32
+	dragStartWindowY int32
 
-	timerSeconds  = 300
-	timerRunning  bool
-	timerMu       sync.Mutex
+	timerSeconds = 300
+	timerRunning bool
+	timerMu      sync.Mutex
 )
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -498,15 +499,15 @@ func setOnTop(hwnd uintptr, onTop bool) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const (
-	CMD_SETTINGS  = 101
-	CMD_TIMER     = 102
-	CMD_ONTOP     = 103
-	CMD_TSTART    = 104
-	CMD_TPAUSE    = 105
-	CMD_TRESET    = 106
-	CMD_TADD      = 107
-	CMD_TSUB      = 108
-	CMD_EXIT      = 109
+	CMD_SETTINGS = 101
+	CMD_TIMER    = 102
+	CMD_ONTOP    = 103
+	CMD_TSTART   = 104
+	CMD_TPAUSE   = 105
+	CMD_TRESET   = 106
+	CMD_TADD     = 107
+	CMD_TSUB     = 108
+	CMD_EXIT     = 109
 )
 
 func showContextMenu(hwnd uintptr) {
@@ -685,17 +686,12 @@ func tickCountdown(hwnd uintptr) {
 		timerMu.Unlock()
 		updateTimerDisplay()
 		pInvalidateRect.Call(hwnd, 0, 1)
-		// Notification
-		go func() {
-			for i := 0; i < 3; i++ {
-				pMessageBeep.Call(0xFFFFFFFF)
-				time.Sleep(300 * time.Millisecond)
-			}
-			title, _ := syscall.UTF16PtrFromString("Timer Complete")
-			msg, _ := syscall.UTF16PtrFromString("Your countdown timer has finished!")
-			pMessageBox.Call(hwnd, uintptr(unsafe.Pointer(msg)),
-				uintptr(unsafe.Pointer(title)), 0x40) // MB_ICONINFORMATION
-		}()
+		// Notification — beeps and MessageBox must be on UI thread
+		pMessageBeep.Call(0xFFFFFFFF)
+		title, _ := syscall.UTF16PtrFromString("Timer Complete")
+		msgT, _ := syscall.UTF16PtrFromString("Your countdown timer has finished!")
+		pMessageBox.Call(hwnd, uintptr(unsafe.Pointer(msgT)),
+			uintptr(unsafe.Pointer(title)), 0x40) // MB_ICONINFORMATION
 		return
 	}
 	timerMu.Unlock()
@@ -751,12 +747,9 @@ func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		appHwnd = hwnd
 		// Start clock timer (1 second)
 		pSetTimer.Call(hwnd, TIMER_CLOCK, 1000, 0)
-		// Tray + taskbar
+		// Use a short Win32 timer to defer taskbar hide (must stay on UI thread)
 		addTrayIcon(hwnd)
-		go func() {
-			time.Sleep(200 * time.Millisecond)
-			hideFromTaskbar(hwnd)
-		}()
+		pSetTimer.Call(hwnd, 99, 200, 0) // one-shot timer for hideFromTaskbar
 		return 0
 
 	case WM_PAINT:
@@ -772,6 +765,10 @@ func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 			pInvalidateRect.Call(hwnd, 0, 1)
 		} else if wParam == TIMER_COUNTDOWN {
 			tickCountdown(hwnd)
+		} else if wParam == 99 {
+			// One-shot: hide from taskbar on UI thread
+			pKillTimer.Call(hwnd, 99)
+			hideFromTaskbar(hwnd)
 		}
 		return 0
 
@@ -863,6 +860,11 @@ func updateClockStr() {
 // Main
 // ═══════════════════════════════════════════════════════════════════════════════
 
+func init() {
+	// Pin the main goroutine to one OS thread — required for Win32 message pump
+	runtime.LockOSThread()
+}
+
 func main() {
 	installFont()
 	settings = loadSettings()
@@ -933,7 +935,7 @@ func main() {
 	var msg MSG
 	for {
 		ret, _, _ := pGetMessage.Call(uintptr(unsafe.Pointer(&msg)), 0, 0, 0)
-		if ret == 0 {
+		if ret == 0 || int32(ret) == -1 {
 			break
 		}
 		pTranslateMessage.Call(uintptr(unsafe.Pointer(&msg)))
