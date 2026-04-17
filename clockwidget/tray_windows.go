@@ -9,6 +9,7 @@ import (
 
 var (
 	shell32              = syscall.NewLazyDLL("shell32.dll")
+	trayKernel32         = syscall.NewLazyDLL("kernel32.dll")
 	procShellNotifyIcon  = shell32.NewProc("Shell_NotifyIconW")
 	procLoadImage        = user32.NewProc("LoadImageW")
 	procCreatePopupMenu  = user32.NewProc("CreatePopupMenu")
@@ -24,7 +25,8 @@ var (
 	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
 	procSetForegroundWnd = user32.NewProc("SetForegroundWindow")
 	procGetCursorPos     = user32.NewProc("GetCursorPos")
-	procExtractIcon      = shell32.NewProc("ExtractIconW")
+	procExtractIconEx    = shell32.NewProc("ExtractIconExW")
+	procGetModuleFileName = trayKernel32.NewProc("GetModuleFileNameW")
 )
 
 const (
@@ -145,8 +147,7 @@ func (a *App) setupTray() {
 	go func() {
 		// Register window class
 		className, _ := syscall.UTF16PtrFromString("ClockWidgetTray")
-		kernel32 := syscall.NewLazyDLL("kernel32.dll")
-		getModuleHandle := kernel32.NewProc("GetModuleHandleW")
+		getModuleHandle := trayKernel32.NewProc("GetModuleHandleW")
 		hInstance, _, _ := getModuleHandle.Call(0)
 
 		wc := WNDCLASSEX{
@@ -168,13 +169,11 @@ func (a *App) setupTray() {
 		)
 		trayHwnd = hwnd
 
-		// Load icon - use the app exe's own icon
-		exePath, _ := syscall.UTF16PtrFromString("")
-		hIcon, _, _ := procExtractIcon.Call(hInstance, uintptr(unsafe.Pointer(exePath)), 0)
-		if hIcon <= 1 {
-			// Fallback: load from .ico file if available, or use default
-			hIcon = 0
-		}
+		// Load icon from our own exe
+		var exeBuf [260]uint16
+		procGetModuleFileName.Call(0, uintptr(unsafe.Pointer(&exeBuf[0])), 260)
+		var hIconSmall uintptr
+		procExtractIconEx.Call(uintptr(unsafe.Pointer(&exeBuf[0])), 0, 0, uintptr(unsafe.Pointer(&hIconSmall)), 1)
 
 		// Setup NOTIFYICONDATA
 		nid = NOTIFYICONDATA{
@@ -183,7 +182,7 @@ func (a *App) setupTray() {
 			UID:              1,
 			UFlags:           NIF_MESSAGE | NIF_ICON | NIF_TIP,
 			UCallbackMessage: WM_TRAYICON,
-			HIcon:            hIcon,
+			HIcon:            hIconSmall,
 		}
 		tip := syscall.StringToUTF16("Clock Widget")
 		copy(nid.SzTip[:], tip)

@@ -24,10 +24,11 @@ var _ embed.FS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 var (
-	user32   = syscall.NewLazyDLL("user32.dll")
-	gdi32    = syscall.NewLazyDLL("gdi32.dll")
-	kernel32 = syscall.NewLazyDLL("kernel32.dll")
-	shell32  = syscall.NewLazyDLL("shell32.dll")
+	user32    = syscall.NewLazyDLL("user32.dll")
+	gdi32     = syscall.NewLazyDLL("gdi32.dll")
+	kernel32  = syscall.NewLazyDLL("kernel32.dll")
+	shell32   = syscall.NewLazyDLL("shell32.dll")
+	comdlg32  = syscall.NewLazyDLL("comdlg32.dll")
 
 	// user32
 	pRegisterClassEx        = user32.NewProc("RegisterClassExW")
@@ -87,6 +88,13 @@ var (
 
 	// shell32
 	pShellNotifyIcon = shell32.NewProc("Shell_NotifyIconW")
+	pExtractIconEx   = shell32.NewProc("ExtractIconExW")
+
+	// comdlg32
+	pChooseColor = comdlg32.NewProc("ChooseColorW")
+
+	// kernel32
+	pGetModuleFileName = kernel32.NewProc("GetModuleFileNameW")
 )
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -448,8 +456,11 @@ func paint(hwnd uintptr) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 func addTrayIcon(hwnd uintptr) {
-	hInst, _, _ := pGetModuleHandle.Call(0)
-	hIcon, _, _ := pLoadIcon.Call(hInst, 1) // icon resource ID 1
+	// Extract icon from our own exe
+	var exeBuf [260]uint16
+	pGetModuleFileName.Call(0, uintptr(unsafe.Pointer(&exeBuf[0])), 260)
+	var hIconSmall uintptr
+	pExtractIconEx.Call(uintptr(unsafe.Pointer(&exeBuf[0])), 0, 0, uintptr(unsafe.Pointer(&hIconSmall)), 1)
 
 	nid = NOTIFYICONDATA{
 		CbSize:           uint32(unsafe.Sizeof(NOTIFYICONDATA{})),
@@ -457,7 +468,7 @@ func addTrayIcon(hwnd uintptr) {
 		UID:              1,
 		UFlags:           NIF_MESSAGE | NIF_ICON | NIF_TIP,
 		UCallbackMessage: WM_TRAYICON,
-		HIcon:            hIcon,
+		HIcon:            hIconSmall,
 	}
 	tip := syscall.StringToUTF16("Clock Widget")
 	copy(nid.SzTip[:], tip)
@@ -499,15 +510,20 @@ func setOnTop(hwnd uintptr, onTop bool) {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 const (
-	CMD_SETTINGS = 101
-	CMD_TIMER    = 102
-	CMD_ONTOP    = 103
-	CMD_TSTART   = 104
-	CMD_TPAUSE   = 105
-	CMD_TRESET   = 106
-	CMD_TADD     = 107
-	CMD_TSUB     = 108
-	CMD_EXIT     = 109
+	CMD_BGCOLOR   = 101
+	CMD_BORDERCLR = 102
+	CMD_DIGITCLR  = 103
+	CMD_TIMER     = 104
+	CMD_ONTOP     = 105
+	CMD_TSTART    = 106
+	CMD_TPAUSE    = 107
+	CMD_TRESET    = 108
+	CMD_TADD      = 109
+	CMD_TSUB      = 110
+	CMD_FORMAT    = 111
+	CMD_OPACUP    = 112
+	CMD_OPACDOWN  = 113
+	CMD_EXIT      = 199
 )
 
 func showContextMenu(hwnd uintptr) {
@@ -528,20 +544,31 @@ func showContextMenu(hwnd uintptr) {
 		pAppendMenu.Call(hMenu, MF_SEPARATOR, 0, 0)
 	}
 
-	appendStr(CMD_SETTINGS, "⚙ Settings", false)
-	appendStr(CMD_TIMER, "⏱ Timer", s.TimerVisible)
+	// Settings submenu
+	appendStr(CMD_BGCOLOR, "Background Color...", false)
+	appendStr(CMD_BORDERCLR, "Border Color...", false)
+	appendStr(CMD_DIGITCLR, "Digit Color...", false)
+	appendSep()
+	fmtLabel := "12-Hour Format"
+	if s.Format24h {
+		fmtLabel = "24-Hour Format"
+	}
+	appendStr(CMD_FORMAT, fmtLabel, s.Format24h)
+	appendStr(CMD_OPACUP, fmt.Sprintf("Opacity + (now %d%%)", s.Opacity), false)
+	appendStr(CMD_OPACDOWN, fmt.Sprintf("Opacity - (now %d%%)", s.Opacity), false)
+	appendSep()
+	appendStr(CMD_TIMER, "Timer", s.TimerVisible)
 	if s.TimerVisible {
-		appendSep()
-		appendStr(CMD_TSTART, "▶ Start Timer", false)
-		appendStr(CMD_TPAUSE, "⏸ Pause Timer", false)
-		appendStr(CMD_TRESET, "↺ Reset Timer (5:00)", false)
-		appendStr(CMD_TADD, "+1 Minute", false)
-		appendStr(CMD_TSUB, "-1 Minute", false)
+		appendStr(CMD_TSTART, "  Start Timer", false)
+		appendStr(CMD_TPAUSE, "  Pause Timer", false)
+		appendStr(CMD_TRESET, "  Reset Timer (5:00)", false)
+		appendStr(CMD_TADD, "  +1 Minute", false)
+		appendStr(CMD_TSUB, "  -1 Minute", false)
 	}
 	appendSep()
-	appendStr(CMD_ONTOP, "📌 Always on Top", s.AlwaysOnTop)
+	appendStr(CMD_ONTOP, "Always on Top", s.AlwaysOnTop)
 	appendSep()
-	appendStr(CMD_EXIT, "✕ Exit", false)
+	appendStr(CMD_EXIT, "Exit", false)
 
 	var pt POINT
 	pGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
@@ -553,17 +580,97 @@ func showContextMenu(hwnd uintptr) {
 	handleMenuCmd(hwnd, cmd)
 }
 
+// CHOOSECOLOR struct for ChooseColorW
+type CHOOSECOLOR struct {
+	LStructSize    uint32
+	HwndOwner      uintptr
+	HInstance      uintptr
+	RgbResult      uint32
+	LpCustColors   uintptr
+	Flags          uint32
+	LCustData      uintptr
+	LpfnHook       uintptr
+	LpTemplateName uintptr
+}
+
+var custColors [16]uint32
+
+func chooseColorDialog(hwnd uintptr, currentRGB uint32) (uint32, bool) {
+	// Convert our 0xRRGGBB to COLORREF 0x00BBGGRR for the dialog
+	cr := uint32(colorRef(currentRGB))
+	cc := CHOOSECOLOR{
+		LStructSize:  uint32(unsafe.Sizeof(CHOOSECOLOR{})),
+		HwndOwner:    hwnd,
+		RgbResult:    cr,
+		LpCustColors: uintptr(unsafe.Pointer(&custColors[0])),
+		Flags:        0x00000001 | 0x00000002, // CC_RGBINIT | CC_FULLOPEN
+	}
+	ret, _, _ := pChooseColor.Call(uintptr(unsafe.Pointer(&cc)))
+	if ret == 0 {
+		return 0, false
+	}
+	// Convert COLORREF back to 0xRRGGBB
+	r := cc.RgbResult & 0xFF
+	g := (cc.RgbResult >> 8) & 0xFF
+	b := (cc.RgbResult >> 16) & 0xFF
+	return (r << 16) | (g << 8) | b, true
+}
+
 func handleMenuCmd(hwnd uintptr, cmd uintptr) {
 	switch cmd {
-	case CMD_SETTINGS:
-		// TODO: native settings dialog (color pickers)
-		// For now: reset to defaults as a placeholder
+	case CMD_BGCOLOR:
+		if rgb, ok := chooseColorDialog(hwnd, settings.BgColor); ok {
+			mu.Lock()
+			settings.BgColor = rgb
+			mu.Unlock()
+			pInvalidateRect.Call(hwnd, 0, 1)
+			saveSettingsAsync()
+		}
+
+	case CMD_BORDERCLR:
+		if rgb, ok := chooseColorDialog(hwnd, settings.BorderColor); ok {
+			mu.Lock()
+			settings.BorderColor = rgb
+			mu.Unlock()
+			pInvalidateRect.Call(hwnd, 0, 1)
+			saveSettingsAsync()
+		}
+
+	case CMD_DIGITCLR:
+		if rgb, ok := chooseColorDialog(hwnd, settings.DigitColor); ok {
+			mu.Lock()
+			settings.DigitColor = rgb
+			mu.Unlock()
+			pInvalidateRect.Call(hwnd, 0, 1)
+			saveSettingsAsync()
+		}
+
+	case CMD_FORMAT:
 		mu.Lock()
-		settings = defaultSettings
+		settings.Format24h = !settings.Format24h
+		mu.Unlock()
+		updateClockStr()
+		pInvalidateRect.Call(hwnd, 0, 1)
+		saveSettingsAsync()
+
+	case CMD_OPACUP:
+		mu.Lock()
+		settings.Opacity += 10
+		if settings.Opacity > 100 {
+			settings.Opacity = 100
+		}
 		mu.Unlock()
 		applyOpacity(hwnd)
-		setOnTop(hwnd, settings.AlwaysOnTop)
-		pInvalidateRect.Call(hwnd, 0, 1)
+		saveSettingsAsync()
+
+	case CMD_OPACDOWN:
+		mu.Lock()
+		settings.Opacity -= 10
+		if settings.Opacity < 20 {
+			settings.Opacity = 20
+		}
+		mu.Unlock()
+		applyOpacity(hwnd)
 		saveSettingsAsync()
 
 	case CMD_TIMER:
