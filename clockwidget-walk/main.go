@@ -24,11 +24,11 @@ var _ embed.FS
 // ═══════════════════════════════════════════════════════════════════════════════
 
 var (
-	user32    = syscall.NewLazyDLL("user32.dll")
-	gdi32     = syscall.NewLazyDLL("gdi32.dll")
-	kernel32  = syscall.NewLazyDLL("kernel32.dll")
-	shell32   = syscall.NewLazyDLL("shell32.dll")
-	comdlg32  = syscall.NewLazyDLL("comdlg32.dll")
+	user32   = syscall.NewLazyDLL("user32.dll")
+	gdi32    = syscall.NewLazyDLL("gdi32.dll")
+	kernel32 = syscall.NewLazyDLL("kernel32.dll")
+	shell32  = syscall.NewLazyDLL("shell32.dll")
+	comdlg32 = syscall.NewLazyDLL("comdlg32.dll")
 
 	// user32
 	pRegisterClassEx        = user32.NewProc("RegisterClassExW")
@@ -63,6 +63,7 @@ var (
 	pDestroyMenu            = user32.NewProc("DestroyMenu")
 	pMessageBeep            = user32.NewProc("MessageBeep")
 	pMessageBox             = user32.NewProc("MessageBoxW")
+	pScreenToClient         = user32.NewProc("ScreenToClient")
 
 	// gdi32
 	pCreateCompatibleDC     = gdi32.NewProc("CreateCompatibleDC")
@@ -127,6 +128,7 @@ const (
 	// Messages
 	WM_CREATE      = 0x0001
 	WM_DESTROY     = 0x0002
+	WM_NCHITTEST   = 0x0084
 	WM_SIZE        = 0x0005
 	WM_PAINT       = 0x000F
 	WM_ERASEBKGND  = 0x0014
@@ -138,6 +140,17 @@ const (
 	WM_COMMAND     = 0x0111
 	WM_APP         = 0x8000
 	WM_TRAYICON    = WM_APP + 1
+
+	// Hit test results
+	HTCLIENT      = 1
+	HTLEFT        = 10
+	HTRIGHT       = 11
+	HTTOP         = 12
+	HTTOPLEFT     = 13
+	HTTOPRIGHT    = 14
+	HTBOTTOM      = 15
+	HTBOTTOMLEFT  = 16
+	HTBOTTOMRIGHT = 17
 
 	// Timer IDs
 	TIMER_CLOCK     = 1
@@ -879,6 +892,45 @@ func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 
+	case WM_NCHITTEST:
+		// Frameless resize: detect edges for resize handles
+		const border = 6
+		screenX := int32(int16(lParam & 0xFFFF))
+		screenY := int32(int16((lParam >> 16) & 0xFFFF))
+		var rc RECT
+		pGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
+
+		left := screenX - rc.Left < border
+		right := rc.Right - screenX < border
+		top := screenY - rc.Top < border
+		bottom := rc.Bottom - screenY < border
+
+		if top && left {
+			return HTTOPLEFT
+		}
+		if top && right {
+			return HTTOPRIGHT
+		}
+		if bottom && left {
+			return HTBOTTOMLEFT
+		}
+		if bottom && right {
+			return HTBOTTOMRIGHT
+		}
+		if left {
+			return HTLEFT
+		}
+		if right {
+			return HTRIGHT
+		}
+		if top {
+			return HTTOP
+		}
+		if bottom {
+			return HTBOTTOM
+		}
+		return HTCLIENT
+
 	case WM_LBUTTONDOWN:
 		dragging = true
 		var pt POINT
@@ -1025,7 +1077,7 @@ func main() {
 		exStyle,
 		uintptr(unsafe.Pointer(className)),
 		uintptr(unsafe.Pointer(title)),
-		WS_POPUP|WS_VISIBLE|WS_SIZEBOX,
+		WS_POPUP|WS_VISIBLE,
 		uintptr(x), uintptr(y), uintptr(w), uintptr(h),
 		0, 0, hInst, 0,
 	)

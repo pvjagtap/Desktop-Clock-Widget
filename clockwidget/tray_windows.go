@@ -8,46 +8,46 @@ import (
 )
 
 var (
-	shell32              = syscall.NewLazyDLL("shell32.dll")
-	trayKernel32         = syscall.NewLazyDLL("kernel32.dll")
-	procShellNotifyIcon  = shell32.NewProc("Shell_NotifyIconW")
-	procLoadImage        = user32.NewProc("LoadImageW")
-	procCreatePopupMenu  = user32.NewProc("CreatePopupMenu")
-	procAppendMenu       = user32.NewProc("AppendMenuW")
-	procTrackPopupMenu   = user32.NewProc("TrackPopupMenu")
-	procDestroyMenu      = user32.NewProc("DestroyMenu")
-	procCreateWindowEx   = user32.NewProc("CreateWindowExW")
-	procDefWindowProc    = user32.NewProc("DefWindowProcW")
-	procRegisterClass    = user32.NewProc("RegisterClassExW")
-	procGetMessage       = user32.NewProc("GetMessageW")
-	procTranslateMessage = user32.NewProc("TranslateMessage")
-	procDispatchMessage  = user32.NewProc("DispatchMessageW")
-	procPostQuitMessage  = user32.NewProc("PostQuitMessage")
-	procSetForegroundWnd = user32.NewProc("SetForegroundWindow")
-	procGetCursorPos     = user32.NewProc("GetCursorPos")
-	procExtractIconEx    = shell32.NewProc("ExtractIconExW")
+	shell32               = syscall.NewLazyDLL("shell32.dll")
+	trayKernel32          = syscall.NewLazyDLL("kernel32.dll")
+	procShellNotifyIcon   = shell32.NewProc("Shell_NotifyIconW")
+	procLoadImage         = user32.NewProc("LoadImageW")
+	procCreatePopupMenu   = user32.NewProc("CreatePopupMenu")
+	procAppendMenu        = user32.NewProc("AppendMenuW")
+	procTrackPopupMenu    = user32.NewProc("TrackPopupMenu")
+	procDestroyMenu       = user32.NewProc("DestroyMenu")
+	procCreateWindowEx    = user32.NewProc("CreateWindowExW")
+	procDefWindowProc     = user32.NewProc("DefWindowProcW")
+	procRegisterClass     = user32.NewProc("RegisterClassExW")
+	procGetMessage        = user32.NewProc("GetMessageW")
+	procTranslateMessage  = user32.NewProc("TranslateMessage")
+	procDispatchMessage   = user32.NewProc("DispatchMessageW")
+	procPostQuitMessage   = user32.NewProc("PostQuitMessage")
+	procSetForegroundWnd  = user32.NewProc("SetForegroundWindow")
+	procGetCursorPos      = user32.NewProc("GetCursorPos")
+	procExtractIconEx     = shell32.NewProc("ExtractIconExW")
 	procGetModuleFileName = trayKernel32.NewProc("GetModuleFileNameW")
 )
 
 const (
-	NIM_ADD        = 0x00000000
-	NIM_MODIFY     = 0x00000001
+	NIM_ADD         = 0x00000000
+	NIM_MODIFY      = 0x00000001
 	NIM_DELETE      = 0x00000002
-	NIF_MESSAGE    = 0x00000001
-	NIF_ICON       = 0x00000002
-	NIF_TIP        = 0x00000004
-	WM_APP         = 0x8000
-	WM_TRAYICON    = WM_APP + 1
-	WM_COMMAND     = 0x0111
-	WM_LBUTTONUP   = 0x0202
-	WM_RBUTTONUP   = 0x0205
-	MF_STRING      = 0x0000
-	MF_SEPARATOR   = 0x0800
+	NIF_MESSAGE     = 0x00000001
+	NIF_ICON        = 0x00000002
+	NIF_TIP         = 0x00000004
+	WM_APP          = 0x8000
+	WM_TRAYICON     = WM_APP + 1
+	WM_COMMAND      = 0x0111
+	WM_LBUTTONUP    = 0x0202
+	WM_RBUTTONUP    = 0x0205
+	MF_STRING       = 0x0000
+	MF_SEPARATOR    = 0x0800
 	TPM_BOTTOMALIGN = 0x0020
 	TPM_LEFTALIGN   = 0x0000
-	IDM_SHOW       = 1001
-	IDM_QUIT       = 1002
-	IMAGE_ICON     = 1
+	IDM_SHOW        = 1001
+	IDM_QUIT        = 1002
+	IMAGE_ICON      = 1
 	LR_LOADFROMFILE = 0x0010
 	LR_DEFAULTSIZE  = 0x0040
 )
@@ -74,7 +74,7 @@ type WNDCLASSEX struct {
 	HbrBackground uintptr
 	LpszMenuName  uintptr
 	LpszClassName uintptr
-	HIconSm      uintptr
+	HIconSm       uintptr
 }
 
 type MSG struct {
