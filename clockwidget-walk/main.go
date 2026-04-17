@@ -129,6 +129,8 @@ const (
 	WM_CREATE      = 0x0001
 	WM_DESTROY     = 0x0002
 	WM_NCHITTEST   = 0x0084
+	WM_NCRBUTTONUP = 0x00A5
+	WM_CONTEXTMENU = 0x007B
 	WM_SIZE        = 0x0005
 	WM_PAINT       = 0x000F
 	WM_ERASEBKGND  = 0x0014
@@ -900,10 +902,10 @@ func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		var rc RECT
 		pGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
 
-		left := screenX - rc.Left < border
-		right := rc.Right - screenX < border
-		top := screenY - rc.Top < border
-		bottom := rc.Bottom - screenY < border
+		left := screenX-rc.Left < border
+		right := rc.Right-screenX < border
+		top := screenY-rc.Top < border
+		bottom := rc.Bottom-screenY < border
 
 		if top && left {
 			return HTTOPLEFT
@@ -965,7 +967,7 @@ func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 
-	case WM_RBUTTONUP:
+	case WM_RBUTTONUP, WM_NCRBUTTONUP, WM_CONTEXTMENU:
 		showContextMenu(hwnd)
 		return 0
 
