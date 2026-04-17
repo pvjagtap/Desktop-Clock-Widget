@@ -75,7 +75,7 @@ var (
 	pCreatePen              = gdi32.NewProc("CreatePen")
 	pCreateFont             = gdi32.NewProc("CreateFontW")
 	pRoundRect              = gdi32.NewProc("RoundRect")
-	pDrawText               = gdi32.NewProc("DrawTextW")
+	pDrawText               = user32.NewProc("DrawTextW")
 	pMoveToEx               = gdi32.NewProc("MoveToEx")
 	pLineTo                 = gdi32.NewProc("LineTo")
 	pAddFontMemResourceEx   = gdi32.NewProc("AddFontMemResourceEx")
