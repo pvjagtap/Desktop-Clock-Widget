@@ -136,6 +136,7 @@ const (
 	WM_ERASEBKGND  = 0x0014
 	WM_LBUTTONDOWN = 0x0201
 	WM_LBUTTONUP   = 0x0202
+	WM_RBUTTONDOWN = 0x0204
 	WM_RBUTTONUP   = 0x0205
 	WM_MOUSEMOVE   = 0x0200
 	WM_TIMER       = 0x0113
@@ -356,6 +357,76 @@ func makeFont(size int32) uintptr {
 	return ret
 }
 
+func makeUIFont(size int32) uintptr {
+	name, _ := syscall.UTF16FromString("Segoe UI Symbol")
+	ret, _, _ := pCreateFont.Call(
+		uintptr(uint32(-size)), 0, 0, 0, FW_BOLD, 0, 0, 0,
+		DEFAULT_CHARSET, OUT_TT_PRECIS, CLIP_DEFAULT, CLEARTYPE_QUALITY,
+		FF_DONTCARE, uintptr(unsafe.Pointer(&name[0])),
+	)
+	return ret
+}
+
+// Button IDs for hit-testing
+const (
+	BTN_NONE    = 0
+	BTN_GEAR    = 1
+	BTN_PLAY    = 2
+	BTN_PAUSE   = 3
+	BTN_RESET   = 4
+	BTN_PLUS    = 5
+	BTN_MINUS   = 6
+)
+
+// Button rectangles (updated during paint)
+type ButtonRect struct {
+	ID   int
+	Rect RECT
+}
+
+var buttons []ButtonRect
+
+func drawButton(memDC uintptr, x, y, sz int32, label string, borderColor uintptr) RECT {
+	r := RECT{x, y, x + sz, y + sz}
+
+	// Button background (slightly lighter than main bg)
+	btnBrush, _, _ := pCreateSolidBrush.Call(uintptr(0x333333)) // dark gray
+	pFillRect.Call(memDC, uintptr(unsafe.Pointer(&r)), btnBrush)
+	pDeleteObject.Call(btnBrush)
+
+	// Button border
+	btnPen, _, _ := pCreatePen.Call(PS_SOLID, 1, borderColor)
+	nullBr, _, _ := pGetStockObject.Call(5) // HOLLOW_BRUSH
+	oldP, _, _ := pSelectObject.Call(memDC, btnPen)
+	oldB, _, _ := pSelectObject.Call(memDC, nullBr)
+	pRoundRect.Call(memDC, uintptr(x), uintptr(y), uintptr(x+sz), uintptr(y+sz), 6, 6)
+	pSelectObject.Call(memDC, oldP)
+	pSelectObject.Call(memDC, oldB)
+	pDeleteObject.Call(btnPen)
+
+	// Button text
+	pSetTextColor.Call(memDC, uintptr(0xCCCCCC)) // light gray text
+	btnFont := makeUIFont(sz - 6)
+	oldF, _, _ := pSelectObject.Call(memDC, btnFont)
+	t16, _ := syscall.UTF16FromString(label)
+	pDrawText.Call(memDC, uintptr(unsafe.Pointer(&t16[0])),
+		uintptr(len(t16)-1), uintptr(unsafe.Pointer(&r)),
+		DT_CENTER|DT_VCENTER|DT_SINGLELINE|DT_NOPREFIX)
+	pSelectObject.Call(memDC, oldF)
+	pDeleteObject.Call(btnFont)
+
+	return r
+}
+
+func hitTestButton(x, y int32) int {
+	for _, b := range buttons {
+		if x >= b.Rect.Left && x < b.Rect.Right && y >= b.Rect.Top && y < b.Rect.Bottom {
+			return b.ID
+		}
+	}
+	return BTN_NONE
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // Painting
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -386,6 +457,10 @@ func paint(hwnd uintptr) {
 		pDeleteDC.Call(memDC)
 	}()
 
+	// Reset buttons
+	buttons = buttons[:0]
+	borderClr := colorRef(s.BorderColor)
+
 	// Fill background
 	bgBrush, _, _ := pCreateSolidBrush.Call(colorRef(s.BgColor))
 	bgR := RECT{0, 0, w, h}
@@ -393,8 +468,7 @@ func paint(hwnd uintptr) {
 	pDeleteObject.Call(bgBrush)
 
 	// Rounded border
-	pen, _, _ := pCreatePen.Call(PS_SOLID, 3, colorRef(s.BorderColor))
-	// Need a null brush for the interior
+	pen, _, _ := pCreatePen.Call(PS_SOLID, 3, borderClr)
 	nullBrush, _, _ := pGetStockObject.Call(5) // HOLLOW_BRUSH
 	oldP, _, _ := pSelectObject.Call(memDC, pen)
 	oldB, _, _ := pSelectObject.Call(memDC, nullBrush)
@@ -403,16 +477,24 @@ func paint(hwnd uintptr) {
 	pSelectObject.Call(memDC, oldB)
 	pDeleteObject.Call(pen)
 
-	// Clock area vs timer area
-	clockH := h
+	// Layout: toolbar (gear button) at top-right, clock in center, timer at bottom
+	toolbarH := int32(24)
+	clockH := h - toolbarH
 	timerH := int32(0)
 	if s.TimerVisible {
-		timerH = 35
-		clockH = h - timerH
+		timerH = 38
+		clockH = h - toolbarH - timerH
 	}
 
-	// Clock text
+	// ── Gear button (top-right) ──
 	pSetBkMode.Call(memDC, TRANSPARENT)
+	gearSz := int32(20)
+	gearX := w - gearSz - 8
+	gearY := int32(3)
+	gr := drawButton(memDC, gearX, gearY, gearSz, "\u2699", borderClr)
+	buttons = append(buttons, ButtonRect{BTN_GEAR, gr})
+
+	// ── Clock text ──
 	pSetTextColor.Call(memDC, colorRef(s.DigitColor))
 
 	fontSize := int32(float64(clockH) * 0.72)
@@ -426,7 +508,7 @@ func paint(hwnd uintptr) {
 	hFont := makeFont(fontSize)
 	oldFont, _, _ := pSelectObject.Call(memDC, hFont)
 
-	clockRect := RECT{0, 0, w, clockH}
+	clockRect := RECT{0, toolbarH, w, toolbarH + clockH}
 	text16, _ := syscall.UTF16FromString(tStr)
 	pDrawText.Call(memDC, uintptr(unsafe.Pointer(&text16[0])),
 		uintptr(len(text16)-1), uintptr(unsafe.Pointer(&clockRect)),
@@ -435,24 +517,54 @@ func paint(hwnd uintptr) {
 	pSelectObject.Call(memDC, oldFont)
 	pDeleteObject.Call(hFont)
 
-	// Timer
+	// ── Timer area with buttons ──
 	if s.TimerVisible {
-		// Divider
-		divPen, _, _ := pCreatePen.Call(PS_SOLID, 1, colorRef(s.BorderColor))
+		timerTop := toolbarH + clockH
+
+		// Divider line
+		divPen, _, _ := pCreatePen.Call(PS_SOLID, 1, borderClr)
 		oldDP, _, _ := pSelectObject.Call(memDC, divPen)
-		pMoveToEx.Call(memDC, 10, uintptr(clockH), 0)
-		pLineTo.Call(memDC, uintptr(w-10), uintptr(clockH))
+		pMoveToEx.Call(memDC, 10, uintptr(timerTop), 0)
+		pLineTo.Call(memDC, uintptr(w-10), uintptr(timerTop))
 		pSelectObject.Call(memDC, oldDP)
 		pDeleteObject.Call(divPen)
 
-		timerFontSize := int32(float64(timerH) * 0.55)
+		// Timer buttons (left side)
+		btnSz := int32(24)
+		btnY := timerTop + (timerH-btnSz)/2
+		btnX := int32(10)
+		btnGap := int32(4)
+
+		pSetBkMode.Call(memDC, TRANSPARENT)
+		r1 := drawButton(memDC, btnX, btnY, btnSz, "\u25B6", borderClr) // ▶ Play
+		buttons = append(buttons, ButtonRect{BTN_PLAY, r1})
+		btnX += btnSz + btnGap
+
+		r2 := drawButton(memDC, btnX, btnY, btnSz, "\u23F8", borderClr) // ⏸ Pause
+		buttons = append(buttons, ButtonRect{BTN_PAUSE, r2})
+		btnX += btnSz + btnGap
+
+		r3 := drawButton(memDC, btnX, btnY, btnSz, "\u21BA", borderClr) // ↺ Reset
+		buttons = append(buttons, ButtonRect{BTN_RESET, r3})
+		btnX += btnSz + btnGap
+
+		r4 := drawButton(memDC, btnX, btnY, btnSz, "+", borderClr)
+		buttons = append(buttons, ButtonRect{BTN_PLUS, r4})
+		btnX += btnSz + btnGap
+
+		r5 := drawButton(memDC, btnX, btnY, btnSz, "-", borderClr)
+		buttons = append(buttons, ButtonRect{BTN_MINUS, r5})
+
+		// Timer display (right side)
+		pSetTextColor.Call(memDC, colorRef(s.DigitColor))
+		timerFontSize := int32(float64(timerH) * 0.45)
 		if timerFontSize < 12 {
 			timerFontSize = 12
 		}
 		hTFont := makeFont(timerFontSize)
 		oldTF, _, _ := pSelectObject.Call(memDC, hTFont)
 
-		timerRect := RECT{0, clockH + 2, w, h}
+		timerRect := RECT{btnX + btnSz + 10, timerTop, w - 8, timerTop + timerH}
 		t16, _ := syscall.UTF16FromString(tmStr)
 		pDrawText.Call(memDC, uintptr(unsafe.Pointer(&t16[0])),
 			uintptr(len(t16)-1), uintptr(unsafe.Pointer(&timerRect)),
@@ -860,6 +972,44 @@ func applyOpacity(hwnd uintptr) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// Button Click Handler
+// ═══════════════════════════════════════════════════════════════════════════════
+
+func handleButtonClick(hwnd uintptr, btn int) {
+	switch btn {
+	case BTN_GEAR:
+		showContextMenu(hwnd)
+	case BTN_PLAY:
+		startCountdown(hwnd)
+	case BTN_PAUSE:
+		stopCountdown()
+	case BTN_RESET:
+		stopCountdown()
+		timerMu.Lock()
+		timerSeconds = 300
+		timerMu.Unlock()
+		updateTimerDisplay()
+		pInvalidateRect.Call(hwnd, 0, 1)
+	case BTN_PLUS:
+		timerMu.Lock()
+		if timerSeconds < 5999 {
+			timerSeconds += 60
+		}
+		timerMu.Unlock()
+		updateTimerDisplay()
+		pInvalidateRect.Call(hwnd, 0, 1)
+	case BTN_MINUS:
+		timerMu.Lock()
+		if timerSeconds >= 60 {
+			timerSeconds -= 60
+		}
+		timerMu.Unlock()
+		updateTimerDisplay()
+		pInvalidateRect.Call(hwnd, 0, 1)
+	}
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Window Proc
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -934,6 +1084,15 @@ func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		return HTCLIENT
 
 	case WM_LBUTTONDOWN:
+		// Check button clicks first
+		clickX := int32(int16(lParam & 0xFFFF))
+		clickY := int32(int16((lParam >> 16) & 0xFFFF))
+		btn := hitTestButton(clickX, clickY)
+		if btn != BTN_NONE {
+			handleButtonClick(hwnd, btn)
+			return 0
+		}
+		// Start drag
 		dragging = true
 		var pt POINT
 		pGetCursorPos.Call(uintptr(unsafe.Pointer(&pt)))
@@ -967,7 +1126,7 @@ func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 
-	case WM_RBUTTONUP, WM_NCRBUTTONUP, WM_CONTEXTMENU:
+	case WM_RBUTTONUP, WM_RBUTTONDOWN, WM_NCRBUTTONUP, WM_CONTEXTMENU:
 		showContextMenu(hwnd)
 		return 0
 
