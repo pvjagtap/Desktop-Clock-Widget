@@ -2,6 +2,7 @@
 clockwidget/build/bin/
 clockwidget/frontend/dist/
 clockwidget/frontend/node_modules/
+clockwidget-walk/*.exe
 
 # Wails generated bindings
 clockwidget/frontend/wailsjs/
