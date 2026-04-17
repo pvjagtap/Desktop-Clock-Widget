@@ -253,7 +253,7 @@ function showTimerNotification() {
             gain.connect(audioCtx.destination);
             osc.frequency.value = 880;
             osc.type = 'square';
-            gain.gain.value = 0.3;
+            gain.gain.value = 0.08;
             osc.start(audioCtx.currentTime + i * 0.4);
             osc.stop(audioCtx.currentTime + i * 0.4 + 0.2);
         }

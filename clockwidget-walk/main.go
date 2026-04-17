@@ -128,7 +128,8 @@ const (
 	// Messages
 	WM_CREATE      = 0x0001
 	WM_DESTROY     = 0x0002
-	WM_NCHITTEST   = 0x0084
+	WM_NCHITTEST      = 0x0084
+	WM_GETMINMAXINFO  = 0x0024
 	WM_NCRBUTTONUP = 0x00A5
 	WM_CONTEXTMENU = 0x007B
 	WM_SIZE        = 0x0005
@@ -808,19 +809,27 @@ func handleMenuCmd(hwnd uintptr, cmd uintptr) {
 		// Resize window
 		var rc RECT
 		pGetWindowRect.Call(hwnd, uintptr(unsafe.Pointer(&rc)))
+		curW := rc.Right - rc.Left
 		curH := rc.Bottom - rc.Top
 		if vis {
 			updateTimerDisplay()
-			pSetWindowPos.Call(hwnd, 0, uintptr(rc.Left), uintptr(rc.Top),
-				uintptr(rc.Right-rc.Left), uintptr(curH+35), SWP_NOZORDER)
-		} else {
-			stopCountdown()
-			newH := curH - 35
-			if newH < 60 {
-				newH = 110
+			newH := curH + 42
+			if newH < 160 {
+				newH = 160
+			}
+			if curW < 320 {
+				curW = 320
 			}
 			pSetWindowPos.Call(hwnd, 0, uintptr(rc.Left), uintptr(rc.Top),
-				uintptr(rc.Right-rc.Left), uintptr(newH), SWP_NOZORDER)
+				uintptr(curW), uintptr(newH), SWP_NOZORDER)
+		} else {
+			stopCountdown()
+			newH := curH - 42
+			if newH < 120 {
+				newH = 120
+			}
+			pSetWindowPos.Call(hwnd, 0, uintptr(rc.Left), uintptr(rc.Top),
+				uintptr(curW), uintptr(newH), SWP_NOZORDER)
 		}
 		pInvalidateRect.Call(hwnd, 0, 1)
 		saveSettingsAsync()
@@ -1044,6 +1053,25 @@ func wndProc(hwnd uintptr, msg uint32, wParam, lParam uintptr) uintptr {
 		}
 		return 0
 
+	case WM_GETMINMAXINFO:
+		mmi := (*struct {
+			Reserved     POINT
+			MaxSize      POINT
+			MaxPosition  POINT
+			MinTrackSize POINT
+			MaxTrackSize POINT
+		})(unsafe.Pointer(lParam))
+		mmi.MinTrackSize.X = 320
+		mu.RLock()
+		tv := settings.TimerVisible
+		mu.RUnlock()
+		if tv {
+			mmi.MinTrackSize.Y = 160
+		} else {
+			mmi.MinTrackSize.Y = 120
+		}
+		return 0
+
 	case WM_NCHITTEST:
 		// Frameless resize: detect edges for resize handles
 		const border = 6
@@ -1213,11 +1241,15 @@ func main() {
 	pRegisterClassEx.Call(uintptr(unsafe.Pointer(&wc)))
 
 	w, h := settings.WindowW, settings.WindowH
-	if w <= 0 {
-		w = 400
+	minW, minH := 320, 120
+	if settings.TimerVisible {
+		minH = 160
 	}
-	if h <= 0 {
-		h = 110
+	if w < minW {
+		w = minW
+	}
+	if h < minH {
+		h = minH
 	}
 	x := settings.WindowX
 	y := settings.WindowY
