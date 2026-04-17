@@ -1,0 +1,34 @@
+# Build output
+clockwidget/build/bin/
+clockwidget/frontend/dist/
+clockwidget/frontend/node_modules/
+
+# Wails generated bindings
+clockwidget/frontend/wailsjs/
+
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Input images (not part of widget)
+input_images/
+
+# Agent memory
+.agents/
+
+# Local history
+.history/
+
+# Copilot logs
+copilot_all_tools.jsonl

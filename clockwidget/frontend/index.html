@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8"/>
+    <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+    <title>ClockWidget</title>
+    <link rel="stylesheet" href="./src/clock.css"/>
+</head>
+<body>
+    <div id="app-wrapper">
+        <!-- Clock Face -->
+        <div id="clock-container">
+            <div id="close-btn" title="Close">&#215;</div>
+            <div id="settings-btn" title="Settings">&#9881;</div>
+            <div id="clock">
+                <span class="digit" id="h1">0</span>
+                <span class="digit" id="h2">0</span>
+                <span class="colon">:</span>
+                <span class="digit" id="m1">0</span>
+                <span class="digit" id="m2">0</span>
+                <span class="colon">:</span>
+                <span class="digit" id="s1">0</span>
+                <span class="digit" id="s2">0</span>
+            </div>
+        </div>
+
+        <!-- Countdown Timer (hidden by default) -->
+        <div id="timer-container" class="hidden">
+            <div id="timer-display">
+                <span class="timer-digit" id="tm1">0</span>
+                <span class="timer-digit" id="tm2">0</span>
+                <span class="timer-colon">:</span>
+                <span class="timer-digit" id="ts1">0</span>
+                <span class="timer-digit" id="ts2">0</span>
+            </div>
+            <div id="timer-controls">
+                <button id="timer-start" title="Start">&#9654;</button>
+                <button id="timer-pause" title="Pause" class="hidden">&#10074;&#10074;</button>
+                <button id="timer-reset" title="Reset">&#8634;</button>
+                <button id="timer-up" title="+1 min">+</button>
+                <button id="timer-down" title="-1 min">-</button>
+            </div>
+        </div>
+
+        <!-- Settings Panel (slides down from clock) -->
+        <div id="settings-panel" class="hidden">
+            <div class="setting-row">
+                <label>Background</label>
+                <input type="color" id="color-bg" value="#1a1a1a"/>
+            </div>
+            <div class="setting-row">
+                <label>Border</label>
+                <input type="color" id="color-border" value="#2979ff"/>
+            </div>
+            <div class="setting-row">
+                <label>Digits</label>
+                <input type="color" id="color-digits" value="#ff0000"/>
+            </div>
+            <div class="setting-row">
+                <label>Opacity</label>
+                <input type="range" id="opacity-slider" min="30" max="100" value="100"/>
+                <span id="opacity-value">100%</span>
+            </div>
+            <div class="setting-row">
+                <label>
+                    <input type="checkbox" id="always-on-top" checked/>
+                    Always on Top
+                </label>
+            </div>
+            <div class="setting-row">
+                <label>
+                    <input type="checkbox" id="format-24h" checked/>
+                    24-hour format
+                </label>
+            </div>
+            <div class="setting-row buttons">
+                <button id="reset-defaults">Reset Defaults</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Right-click Context Menu -->
+    <div id="context-menu" class="hidden">
+        <div class="ctx-item" id="ctx-settings">&#9881; Settings</div>
+        <div class="ctx-item" id="ctx-timer">&#9201; Timer</div>
+        <div class="ctx-item" id="ctx-ontop">&#9745; Always on Top</div>
+        <div class="ctx-separator"></div>
+        <div class="ctx-item" id="ctx-exit">&#10005; Exit</div>
+    </div>
+
+    <script src="./src/clock.js" type="module"></script>
+</body>
+</html>
