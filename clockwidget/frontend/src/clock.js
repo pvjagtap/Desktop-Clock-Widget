@@ -120,34 +120,58 @@ async function resizeWindow() {
     setSize(size.w, newH);
 }
 
+// === Screen bounds helper ===
+// Keep at least KEEP_VISIBLE px of the widget on-screen so it can never be lost.
+const KEEP_VISIBLE = 60;
+
+function screenBounds() {
+    // window.screen reflects the monitor the widget currently sits on.
+    // availLeft/availTop are supported in Chromium/WebView2.
+    const s = window.screen || {};
+    return {
+        left:   Number.isFinite(s.availLeft) ? s.availLeft : 0,
+        top:    Number.isFinite(s.availTop)  ? s.availTop  : 0,
+        width:  s.availWidth  || s.width  || 1920,
+        height: s.availHeight || s.height || 1080,
+    };
+}
+
+function clampPos(x, y, w, h) {
+    const b = screenBounds();
+    const minX = b.left - (w - KEEP_VISIBLE);
+    const maxX = b.left + b.width  - KEEP_VISIBLE;
+    const minY = b.top;
+    const maxY = b.top  + b.height - KEEP_VISIBLE;
+    return {
+        x: Math.min(maxX, Math.max(minX, Math.round(x))),
+        y: Math.min(maxY, Math.max(minY, Math.round(y))),
+    };
+}
+
 // === Drag to Move ===
-let isDragging = false;
-let dragX = 0, dragY = 0;
+// Native OS drag is enabled via `--wails-draggable: drag` in clock.css.
+// The Wails runtime intercepts mousedown on those elements and hands the
+// drag to Win32 (WM_NCLBUTTONDOWN + HTCAPTION), so the window follows the
+// cursor at the OS level and can never be outrun by fast movement.
+//
+// After the native drag ends, the browser still emits `mouseup` on document.
+// We use that to clamp the final position back into the visible screen and
+// persist the new coordinates.
+let winW = 380, winH = 100;
 
-clockContainer.addEventListener('mousedown', (e) => {
-    if (e.target.id === 'close-btn' || e.target.id === 'settings-btn') return;
-    if (e.button !== 0) return;
-    isDragging = true;
-    dragX = e.screenX;
-    dragY = e.screenY;
-});
-
-document.addEventListener('mousemove', (e) => {
-    if (!isDragging) return;
-    const dx = e.screenX - dragX;
-    const dy = e.screenY - dragY;
-    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) {
-        dragX = e.screenX;
-        dragY = e.screenY;
-        getPosition().then(pos => setPosition(pos.x + dx, pos.y + dy));
-    }
-});
-
-document.addEventListener('mouseup', () => {
-    if (isDragging) {
-        isDragging = false;
-        savePosition();
-    }
+document.addEventListener('mouseup', async () => {
+    // Only act if a drag likely happened (left button just released anywhere).
+    try {
+        const pos  = await getPosition();
+        const size = await getSize();
+        const c = clampPos(pos.x, pos.y, size.w, size.h);
+        if (c.x !== pos.x || c.y !== pos.y) {
+            setPosition(c.x, c.y);
+        }
+        winW = size.w;
+        winH = size.h;
+        await savePosition();
+    } catch (_) { /* ignore */ }
 });
 
 // === Settings Panel (auto-expand window) ===
@@ -431,15 +455,21 @@ async function init() {
     setAlwaysOnTop(settings.alwaysOnTop);
     isOnTop = settings.alwaysOnTop;
 
-    if (settings.windowX >= 0 && settings.windowY >= 0) {
-        setPosition(settings.windowX, settings.windowY);
-    }
-
     // Apply timer visibility before setting size
     applyTimerVisibility();
 
     if (settings.windowW > 0) {
         setSize(settings.windowW, calcTotalHeight());
+    }
+
+    if (settings.windowX >= 0 && settings.windowY >= 0) {
+        // Validate saved position against the CURRENT screen layout.
+        // If a monitor was disconnected, the widget would otherwise
+        // open invisible. Clamp so at least KEEP_VISIBLE px are on-screen.
+        const w = settings.windowW > 0 ? settings.windowW : DEFAULTS.windowW;
+        const h = calcTotalHeight();
+        const c = clampPos(settings.windowX, settings.windowY, w, h);
+        setPosition(c.x, c.y);
     }
 
     updateClock();

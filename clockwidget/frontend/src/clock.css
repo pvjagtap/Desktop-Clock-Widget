@@ -47,10 +47,21 @@ html, body {
     position: relative;
     cursor: grab;
     overflow: hidden;
+    /* Native OS window drag - handled by Wails runtime, cannot outrun cursor */
+    --wails-draggable: drag;
 }
 
 #clock-container:active {
     cursor: grabbing;
+}
+
+/* Interactive children must opt out of the drag region */
+#close-btn,
+#settings-btn,
+#settings-panel,
+#timer-container,
+#context-menu {
+    --wails-draggable: no-drag;
 }
 
 /* === Clock Digits === */
